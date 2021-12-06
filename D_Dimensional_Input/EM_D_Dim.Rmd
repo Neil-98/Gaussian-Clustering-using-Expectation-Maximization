@@ -20,6 +20,7 @@ sample_size <- nrow(data)
 no_of_dimensions <- ncol(data)
 
 # Set initial parameters
+set.seed(123)
 mu <- matrix(sample(-10:10, no_of_dimensions * k, replace = TRUE), nrow = no_of_dimensions, ncol = k)
 Sigma <- array(data = NaN, c(no_of_dimensions, no_of_dimensions, k))
 for(i in seq(1:k)) {
@@ -124,28 +125,52 @@ print(parameter_estimates)
 <h3>EM Loop</h3>
 
 ```{r}
-Expectation_Maximum_Iteration <- function (sample_data, mu, Sigma, k, no_of_iterations) {
+Gaussian_Mixture_Model_Clustering <- function (sample_data, mu, Sigma, k, margin_of_error) {
   
   sample_size <- nrow(sample_data)
   cluster_sizes <- rep(sample_size/ k, k)
   
-  for(i in seq(1:no_of_iterations)) { # To be replaced with convergence check
+  prev_mu <- mu
+  convergence <- FALSE
+  
+  i <- 1
+  while(!convergence) { # To be replaced with convergence check
     Gaussian_likelihoods <- E_step(sample_data, mu, Sigma, k, cluster_sizes)
     
     cluster_sizes <- colSums(Gaussian_likelihoods)
     estimates_and_clusters <- M_step(sample_data, Gaussian_likelihoods, k, cluster_sizes)
     
     parameter_estimates <- estimates_and_clusters$Parameter_Estimates
+    
+    prev_mu <- mu
+    
     mu <- parameter_estimates$Next_Mu
     Sigma <- parameter_estimates$Next_Sigma
+    
+    error <- sum(abs(mu - prev_mu))/ k
+    # print(paste("error = ", error))
+    acceptable_error <- sum(abs(margin_of_error * prev_mu))/ k
+    # print(paste("acceptable error = ", acceptable_error))
+    
+    if(error <= acceptable_error) {
+      convergence <- TRUE
+    }
+    
+    i <- i + 1
   }
   
-  return(estimates_and_clusters)
+  result_summary <- list(i, parameter_estimates, estimates_and_clusters$Gaussian_Clusters)
+  names(result_summary) <- c("No_of_Iterations", "Parameter_Estimates", "Gaussian_Clusters")
+  
+  return(result_summary)
 }
 ```
 
 ```{r}
-estimates_and_clusters <- Expectation_Maximum_Iteration(data, mu, Sigma, k, no_of_iterations = 500)
-parameter_estimates <- estimates_and_clusters$Parameter_Estimates
-print(parameter_estimates)
+result_summary <- Gaussian_Mixture_Model_Clustering(data, mu, Sigma, k, margin_of_error = 0.000000000005)
+no_of_interations <- result_summary$No_of_Iterations
+parameter_estimates <- result_summary$Parameter_Estimates
+print(paste("Reached convergence at iteration ", no_of_interations, " ... "))
+print("Parameter Estimates")
+print(parameter_estimates) # Output = $Next_Mu (each column is vector of means for a Gaussian); $Next_Sigma (2D slices printed are the Variance-Covariance Matrices of the Gaussians)
 ```
