@@ -1,0 +1,483 @@
+---
+title: "Expectation Maximization for Gaussian Clustering"
+output: html_notebook
+---
+
+```{r}
+library(ggplot2)
+library(mvtnorm)
+library(plot3D)
+```
+
+```{r}
+generate_sample_data <- function(sample_size, mu, sigma, k) {
+  sample_data <- c()
+  for(i in seq(1:k)) {
+    sample_data <- c(sample_data, rnorm(n = sample_size/k, mean = mu[i], sd = sigma[i]))
+  }
+  return(sample_data)
+}
+```
+
+```{r}
+k <- 3
+mu <- c(3, 5, 12)
+sigma <- c(1, 2, 2)
+```
+
+```{r}
+set.seed(123)
+sample_size <- 100
+sample_data <- generate_sample_data(sample_size, mu, sigma, k)
+```
+
+```{r}
+hist(sample_data)
+```
+
+```{r}
+E_step <- function(sample_data, mu, sigma, k) {
+  
+  sample_size <- length(sample_data)
+  
+  denominator <- matrix(0, 1, sample_size)
+  for(i in seq(1:k)) {
+    denominator <- denominator + (1 / k) * exp(-(sample_data - mu[i]) ^ 2 / 2 * sigma[i] ^ 2)  / (sqrt(2 * pi) * sigma[i])
+  }
+  
+  Gaussian_likelihoods <- matrix(0, sample_size, k)
+  
+  for(i in seq(1:k)) {
+    Gaussian_likelihoods[, i] <- (1 / k) * (exp(-(sample_data - mu[i]) ^ 2 / 2 * sigma[i] ^ 2)  / (sqrt(2 * pi) * sigma[i])) / denominator
+  }
+  
+  return(Gaussian_likelihoods)
+}
+```
+
+```{r}
+k <- 3
+mu0 <- c(2, 3, 7)
+sigma0 <- c(1, 1, 1)
+```
+
+```{r}
+plot <- ggplot(data.frame(sample_data), aes(x = sample_data, y = 0)) + 
+        geom_pointrange(aes(xmin = min(sample_data) - 5, xmax = max(sample_data) + 5))
+for(i in seq(1:k)) {
+  plot <- plot + 
+          stat_function(fun = dnorm, color = "red", 
+                        args = list(mean = mu0[i], sd = sigma0[i]))
+  
+}
+print(plot)
+```
+
+
+```{r}
+Gaussian_likelihoods <- E_step(sample_data, mu, sigma, k)
+head(Gaussian_likelihoods)
+dim(Gaussian_likelihoods)
+```
+
+```{r}
+M_step <- function(sample_data, Gaussian_likelihoods, k) {
+  
+  sample_size <- length(sample_data)
+  next_mu <- matrix(0, k, 1)
+  next_sigma <- matrix(0, k, 1)
+  
+  Gaussian_cluster <- matrix(data = NaN, nrow = k, ncol = sample_size)
+  #
+  # print(paste("Gaussian likelihoods = ", length(Gaussian_likelihoods[,1])))
+  # print(paste("Sample data = ", length(sample_data)))
+  # print(paste("Sample data (upto no of likelihoods) = ", length(sample_data[1:length(Gaussian_likelihoods)])))
+  for(i in seq(1:k)) {
+    
+    # cluster_name <- paste("Gaussian_cluster", i, sep = "")
+    # assign(cluster_name, t(sample_data[expected_Gaussians == i])) # Data estimated to belong to Gaussian number i
+    
+    Gaussian_cluster[i, ] <- t(Gaussian_likelihoods[, i]) * sample_data # Data estimated to belong to Gaussian number i
+    # print(paste("Gaussian cluster ", i, ":"))
+    # print(Gaussian_cluster[i, length(Gaussian_likelihoods[, i])])
+    next_mu[i] <- mean(Gaussian_cluster[i, ], na.rm = TRUE)
+    next_sigma[i] <- sqrt(sum((Gaussian_cluster[i, ] - next_mu[i]) ^ 2, na.rm = TRUE) / length(Gaussian_cluster[i, !is.na(Gaussian_cluster[i, ])]))
+  }
+  
+  parameter_estimates <- list(next_mu, next_sigma)
+  names(parameter_estimates) <- c("Next_Mu", "Next_Sigma")
+  
+  estimates_and_clusters <- list(parameter_estimates, Gaussian_cluster)
+  names(estimates_and_clusters) <- c("Parameter_Estimates", "Gaussian_Clusters")
+  
+  return(estimates_and_clusters)
+}
+```
+
+```{r}
+estimates_and_clusters <- M_step(sample_data, Gaussian_likelihoods, k)
+parameter_estimates <- estimates_and_clusters$Parameter_Estimates
+print(estimates_and_clusters)
+```
+
+```{r}
+plot <- ggplot(data.frame(sample_data), aes(x = sample_data, y = 0)) + 
+        geom_pointrange(aes(xmin = min(sample_data) - 5, xmax = max(sample_data) + 5))
+for(i in seq(1:k)) {
+  plot <- plot + 
+          stat_function(fun = dnorm, color = "red", 
+                        args = list(mean = parameter_estimates$Next_Mu[i], sd = parameter_estimates$Next_Sigma[i]))
+  
+}
+print(plot)
+```
+
+<h3>Second Iteration</h3>
+
+```{r}
+Gaussian_likelihoods <- E_step(sample_data, parameter_estimates$Next_Mu, parameter_estimates$Next_Sigma, k)
+# expected_Gaussians <- matrix(0, length(Gaussian_likelihoods), 1)
+# expected_Gaussians <- max.col(Gaussian_likelihoods, ties.method = "first")
+estimates_and_clusters <- M_step(sample_data, Gaussian_likelihoods, k)
+parameter_estimates <- estimates_and_clusters$Parameter_Estimates
+print(estimates_and_clusters)
+```
+
+```{r}
+plot <- ggplot(data.frame(sample_data), aes(x = sample_data, y = 0)) + 
+        geom_pointrange(aes(xmin = min(sample_data) - 5, xmax = max(sample_data) + 5))
+for(i in seq(1:k)) {
+  plot <- plot + 
+          stat_function(fun = dnorm, color = "red", 
+                        args = list(mean = parameter_estimates$Next_Mu[i], sd = parameter_estimates$Next_Sigma[i]))
+  
+}
+print(plot)
+```
+
+<h3>Iteration 3</h3>
+```{r}
+Gaussian_likelihoods <- E_step(sample_data, parameter_estimates$Next_Mu, parameter_estimates$Next_Sigma, k)
+print(Gaussian_likelihoods)
+# expected_Gaussians <- matrix(0, length(Gaussian_likelihoods), 1)
+# expected_Gaussians <- max.col(Gaussian_likelihoods, ties.method = "random")
+# print(expected_Gaussians)
+estimates_and_clusters <- M_step(sample_data, Gaussian_likelihoods, k)
+parameter_estimates <- estimates_and_clusters$Parameter_Estimates
+print(estimates_and_clusters)
+```
+
+```{r}
+plot <- ggplot(data.frame(sample_data), aes(x = sample_data, y = 0)) + 
+        geom_pointrange(aes(xmin = min(sample_data) - 5, xmax = max(sample_data) + 5))
+for(i in seq(1:k)) {
+  plot <- plot + 
+          stat_function(fun = dnorm, color = "red", 
+                        args = list(mean = parameter_estimates$Next_Mu[i], sd = parameter_estimates$Next_Sigma[i]))
+  
+}
+print(plot)
+```
+
+<h3>EM Loop</h3>
+
+```{r}
+Expectation_Maximum_Iteration <- function (sample_data, mu, sigma, k, no_of_iterations) {
+  
+  for(i in seq(1:no_of_iterations)) { # To be replaced with convergence check
+    Gaussian_likelihoods <- E_step(sample_data, mu, sigma, k)
+    
+    estimates_and_clusters <- M_step(sample_data, Gaussian_likelihoods, k)
+    
+    parameter_estimates <- estimates_and_clusters$Parameter_Estimates
+    mu <- parameter_estimates$Next_Mu
+    sigma <- parameter_estimates$Next_Sigma
+  }
+  
+  return(estimates_and_clusters)
+}
+```
+
+```{r}
+k <- 2
+mu <- c(3, 12)
+sigma <- c(1, 2)
+```
+
+```{r}
+set.seed(123)
+sample_size <- 100
+sample_data <- generate_sample_data(sample_size, mu, sigma, k)
+```
+
+```{r}
+hist(sample_data)
+```
+
+```{r}
+k <- 2
+mu0 <- c(1, 15)
+sigma0 <- c(1, 1)
+```
+
+```{r}
+plot <- ggplot(data.frame(sample_data), aes(x = sample_data, y = 0)) + 
+        geom_pointrange(aes(xmin = min(sample_data) - 5, xmax = max(sample_data) + 5))
+for(i in seq(1:k)) {
+  plot <- plot + 
+          stat_function(fun = dnorm, color = "red", 
+                        args = list(mean = mu0[i], sd = sigma0[i]))
+  
+}
+print(plot)
+```
+
+```{r}
+estimates_and_clusters <- Expectation_Maximum_Iteration(sample_data = sample_data, mu = mu0, sigma = sigma0, k = k, no_of_iterations = 5)
+parameter_estimates <- estimates_and_clusters$Parameter_Estimates
+print(estimates_and_clusters)
+```
+
+```{r}
+plot <- ggplot(data.frame(sample_data), aes(x = sample_data, y = 0)) + 
+        geom_pointrange(aes(xmin = min(sample_data) - 5, xmax = max(sample_data) + 5))
+for(i in seq(1:k)) {
+  plot <- plot + 
+          stat_function(fun = dnorm, color = "red", 
+                        args = list(mean = parameter_estimates$Next_Mu[i], sd = parameter_estimates$Next_Sigma[i]))
+  
+}
+print(plot)
+```
+```{r}
+generate_sample_data <- function(sample_shape, mu, sigma, k) {
+  
+  unstructured_sample_data <- c()
+  sample_size <- sample_shape[1] * sample_shape[2] * k
+  sample_size_by_k <- sample_size/k
+  for(i in seq(1:k)) {
+    unstructured_sample_data <- c(unstructured_sample_data, rnorm(n = sample_size_by_k, mean = mu[i], sd = sigma[i]))
+  }
+  
+  sample(unstructured_sample_data)
+  
+  # print(paste("length of unstructured sample data = ", length(unstructured_sample_data)))
+  
+  sample_data <- matrix(data = unstructured_sample_data,
+                               nrow = sqrt(sample_size),
+                               ncol = sqrt(sample_size))
+  return(sample_data)
+}
+```
+
+```{r}
+sample_data <- array(NA, dim = c(3, 5, 5))
+print(sample_data)
+```
+```{r}
+k <- 2
+mu <- matrix(data = c(3, 5, 12, 17), nrow = 2, ncol = 2)
+sigma <- matrix(data = c(1, 2, 2, 1.5), nrow = 2, ncol = 2)
+```
+
+```{r}
+set.seed(123)
+sample_shape <- c(5, 5)
+sample_data <- generate_sample_data(sample_shape, mu, sigma, k)
+```
+
+```{r}
+print(sample_data)
+```
+```{r}
+mean <- c(1, 2)
+sigma <- matrix(c(10, 2, 2, 12), nrow = 2, ncol = 2)
+sample <- rmvnorm(500, mean, sigma)
+```
+
+```{r}
+print(sample)
+```
+
+```{r}
+x <- sample[1]
+y <- sample[2]
+
+##  Create cuts:
+x_c <- cut(x, 50)
+y_c <- cut(y, 50)
+
+##  Calculate joint counts at cut levels:
+z <- table(x_c, y_c)
+
+##  Plot as a 3D histogram:
+hist3D(z=z, border="black")
+
+##  Plot as a 2D heatmap:
+image2D(z=z, border="black")
+```
+##```{r}
+E_step <- function(sample_data, mu, Sigma, k) {
+  
+  sample_size <- nrow(sample_data)
+  
+  denominator <- matrix(0, sample_size, 1)
+  for(i in seq(1:k)) {
+  denominator <- denominator + (1 / k) * (exp((-1/2) * (t(sample_data - t(mu)) * inv(Sigma) * sample_data - t(mu)))  / sqrt((2 * pi) ^ k * det(Sigma)))
+  }
+  
+  Gaussian_likelihoods <- matrix(0, sample_size, k)
+  
+  for(i in seq(1:k)) {
+    Gaussian_likelihoods[, i] <- (1 / k) * (exp(-(sample_data - mu[i]) ^ 2 / 2 * sigma[i] ^ 2)  / (sqrt(2 * pi) * sigma[i])) / denominator
+  }
+  
+  return(Gaussian_likelihoods)
+}
+## ```
+
+```{r}
+data <- as.matrix(read.csv(file = './data/kmeans.csv'))
+```
+
+```{r}
+k <- 3
+
+sample_size <- nrow(data)
+no_of_dimensions <- ncol(data)
+
+# Set initial parameters
+mu <- matrix(sample(-10:10, no_of_dimensions * k, replace = TRUE), nrow = no_of_dimensions, ncol = k)
+Sigma <- array(data = NaN, c(no_of_dimensions, no_of_dimensions, k))
+for(i in seq(1:k)) {
+  Sigma[, , i] <- cov(data)
+}
+```
+
+```{r}
+scatter2D(x = data[, 1], y = data[, 2])
+```
+
+<h3>Expectation Step</h3>
+
+```{r}
+E_step <- function(sample_data, mu, Sigma, k, cluster_sizes) {
+  
+  sample_size <- nrow(sample_data)
+  
+  # denominator <- matrix(0, sample_size, 1)
+  # for(i in seq(1:k)) {
+  #  denominator <- denominator + (1 / k) * dmvnorm(sample_data, mu[, i], Sigma[, , i], log = FALSE)
+  # }
+  
+  Gaussian_likelihoods <- matrix(0, sample_size, k)
+  
+  for(i in seq(1:k)) {
+    Gaussian_likelihoods[, i] <- (1 / cluster_sizes[i]) * dmvnorm(sample_data, mu[, i], Sigma[, , i])
+  }
+  
+  Gaussian_likelihoods <- Gaussian_likelihoods/ rowSums(Gaussian_likelihoods)
+  
+  return(Gaussian_likelihoods)
+}
+```
+
+```{r}
+# Testing E-step
+cluster_sizes <- rep(nrow(data)/ k, k)
+Gaussian_likelihoods <- E_step(data, mu, Sigma, k, cluster_sizes)
+print(rowSums(Gaussian_likelihoods))
+```
+
+```{r}
+print(colSums(Gaussian_likelihoods))
+```
+
+```{r}
+dim(data)
+```
+
+
+```{r}
+dim(Gaussian_likelihoods)
+```
+
+<h3>Maximization Step</h3>
+
+```{r}
+M_step <- function(sample_data, Gaussian_likelihoods, k, cluster_sizes) {
+  sample_size <- nrow(sample_data)
+  no_of_dimensions <- ncol(sample_data)
+  next_mu <- matrix(NA, no_of_dimensions, k)
+  next_Sigma <- array(data = NA, c(no_of_dimensions, no_of_dimensions, k))
+  
+  Gaussian_cluster <- array(data = NaN, c(sample_size, no_of_dimensions, k))
+  for(i in seq(1:k)) {
+    Gaussian_cluster[, , i] <- rep(Gaussian_likelihoods[, i], no_of_dimensions)
+  }
+  #
+  # print(paste("Gaussian likelihoods = ", length(Gaussian_likelihoods[,1])))
+  # print(paste("Sample data = ", length(sample_data)))
+  # print(paste("Sample data (upto no of likelihoods) = ", length(sample_data[1:length(Gaussian_likelihoods)])))
+  for(i in seq(1:k)) {
+    
+    # cluster_name <- paste("Gaussian_cluster", i, sep = "")
+    # assign(cluster_name, t(sample_data[expected_Gaussians == i])) # Data estimated to belong to Gaussian number i
+    # print(paste("Loop Iteration: ", i))
+    Gaussian_cluster[, , i] <- Gaussian_likelihoods[, i] * sample_data # Data estimated to belong to Gaussian number i
+    
+    # print("Fine till here")
+    # print(paste("Gaussian cluster ", i, ":"))
+    # print(Gaussian_cluster[i, length(Gaussian_likelihoods[, i])])
+    next_mu[, i] <- colSums(Gaussian_cluster[, , i])/ cluster_sizes[i]
+    
+    standard_deviations <- Gaussian_cluster[, , i] - rep(t(next_mu[, i]), sample_size)
+    next_Sigma[, , i] <- (t(standard_deviations) %*% standard_deviations) / cluster_sizes[i]
+    # sqrt(sum((Gaussian_cluster[, , i] - next_mu[, i]) ^ 2, na.rm = TRUE) / nrow(Gaussian_cluster[, , i]))
+  }
+  
+  parameter_estimates <- list(next_mu, next_Sigma)
+  names(parameter_estimates) <- c("Next_Mu", "Next_Sigma")
+  
+  estimates_and_clusters <- list(parameter_estimates, Gaussian_cluster)
+  names(estimates_and_clusters) <- c("Parameter_Estimates", "Gaussian_Clusters")
+  
+  return(estimates_and_clusters)
+}
+```
+
+```{r}
+estimates_and_clusters <- M_step(data, Gaussian_likelihoods, k, colSums(Gaussian_likelihoods))
+parameter_estimates <- estimates_and_clusters$Parameter_Estimates
+print(parameter_estimates)
+```
+
+<h3>EM Loop</h3>
+
+```{r}
+Expectation_Maximum_Iteration <- function (sample_data, mu, Sigma, k, no_of_iterations) {
+  
+  sample_size <- nrow(sample_data)
+  cluster_sizes <- rep(sample_size/ k, k)
+  
+  for(i in seq(1:no_of_iterations)) { # To be replaced with convergence check
+    Gaussian_likelihoods <- E_step(sample_data, mu, Sigma, k, cluster_sizes)
+    
+    cluster_sizes <- colSums(Gaussian_likelihoods)
+    estimates_and_clusters <- M_step(sample_data, Gaussian_likelihoods, k, cluster_sizes)
+    
+    parameter_estimates <- estimates_and_clusters$Parameter_Estimates
+    mu <- parameter_estimates$Next_Mu
+    Sigma <- parameter_estimates$Next_Sigma
+  }
+  
+  return(estimates_and_clusters)
+}
+```
+
+```{r}
+estimates_and_clusters <- Expectation_Maximum_Iteration(data, mu, Sigma, k, no_of_iterations = 500)
+parameter_estimates <- estimates_and_clusters$Parameter_Estimates
+print(parameter_estimates)
+```
+

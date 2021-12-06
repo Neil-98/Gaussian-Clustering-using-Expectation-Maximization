@@ -1,0 +1,151 @@
+---
+title: "Expectation Maximization for Gaussian Clustering"
+output: html_notebook
+---
+
+```{r}
+library(ggplot2)
+library(mvtnorm)
+library(plot3D)
+```
+
+```{r}
+data <- as.matrix(read.csv(file = './data/kmeans.csv'))
+```
+
+```{r}
+k <- 3
+
+sample_size <- nrow(data)
+no_of_dimensions <- ncol(data)
+
+# Set initial parameters
+mu <- matrix(sample(-10:10, no_of_dimensions * k, replace = TRUE), nrow = no_of_dimensions, ncol = k)
+Sigma <- array(data = NaN, c(no_of_dimensions, no_of_dimensions, k))
+for(i in seq(1:k)) {
+  Sigma[, , i] <- cov(data)
+}
+```
+
+<h3>Expectation Step</h3>
+
+```{r}
+E_step <- function(sample_data, mu, Sigma, k, cluster_sizes) {
+  
+  sample_size <- nrow(sample_data)
+  
+  # denominator <- matrix(0, sample_size, 1)
+  # for(i in seq(1:k)) {
+  #  denominator <- denominator + (1 / k) * dmvnorm(sample_data, mu[, i], Sigma[, , i], log = FALSE)
+  # }
+  
+  Gaussian_likelihoods <- matrix(0, sample_size, k)
+  
+  for(i in seq(1:k)) {
+    Gaussian_likelihoods[, i] <- (1 / cluster_sizes[i]) * dmvnorm(sample_data, mu[, i], Sigma[, , i])
+  }
+  
+  Gaussian_likelihoods <- Gaussian_likelihoods/ rowSums(Gaussian_likelihoods)
+  
+  return(Gaussian_likelihoods)
+}
+```
+
+```{r}
+# Testing E-step
+cluster_sizes <- rep(nrow(data)/ k, k)
+Gaussian_likelihoods <- E_step(data, mu, Sigma, k, cluster_sizes)
+print(rowSums(Gaussian_likelihoods))
+```
+
+```{r}
+print(colSums(Gaussian_likelihoods))
+```
+
+```{r}
+dim(data)
+```
+
+
+```{r}
+dim(Gaussian_likelihoods)
+```
+
+<h3>Maximization Step</h3>
+
+```{r}
+M_step <- function(sample_data, Gaussian_likelihoods, k, cluster_sizes) {
+  sample_size <- nrow(sample_data)
+  no_of_dimensions <- ncol(sample_data)
+  next_mu <- matrix(NA, no_of_dimensions, k)
+  next_Sigma <- array(data = NA, c(no_of_dimensions, no_of_dimensions, k))
+  
+  Gaussian_cluster <- array(data = NaN, c(sample_size, no_of_dimensions, k))
+  for(i in seq(1:k)) {
+    Gaussian_cluster[, , i] <- rep(Gaussian_likelihoods[, i], no_of_dimensions)
+  }
+  #
+  # print(paste("Gaussian likelihoods = ", length(Gaussian_likelihoods[,1])))
+  # print(paste("Sample data = ", length(sample_data)))
+  # print(paste("Sample data (upto no of likelihoods) = ", length(sample_data[1:length(Gaussian_likelihoods)])))
+  for(i in seq(1:k)) {
+    
+    # cluster_name <- paste("Gaussian_cluster", i, sep = "")
+    # assign(cluster_name, t(sample_data[expected_Gaussians == i])) # Data estimated to belong to Gaussian number i
+    # print(paste("Loop Iteration: ", i))
+    Gaussian_cluster[, , i] <- Gaussian_likelihoods[, i] * sample_data # Data estimated to belong to Gaussian number i
+    
+    # print("Fine till here")
+    # print(paste("Gaussian cluster ", i, ":"))
+    # print(Gaussian_cluster[i, length(Gaussian_likelihoods[, i])])
+    next_mu[, i] <- colSums(Gaussian_cluster[, , i])/ cluster_sizes[i]
+    
+    standard_deviations <- Gaussian_cluster[, , i] - rep(t(next_mu[, i]), sample_size)
+    next_Sigma[, , i] <- (t(standard_deviations) %*% standard_deviations) / cluster_sizes[i]
+    # sqrt(sum((Gaussian_cluster[, , i] - next_mu[, i]) ^ 2, na.rm = TRUE) / nrow(Gaussian_cluster[, , i]))
+  }
+  
+  parameter_estimates <- list(next_mu, next_Sigma)
+  names(parameter_estimates) <- c("Next_Mu", "Next_Sigma")
+  
+  estimates_and_clusters <- list(parameter_estimates, Gaussian_cluster)
+  names(estimates_and_clusters) <- c("Parameter_Estimates", "Gaussian_Clusters")
+  
+  return(estimates_and_clusters)
+}
+```
+
+```{r}
+estimates_and_clusters <- M_step(data, Gaussian_likelihoods, k, colSums(Gaussian_likelihoods))
+parameter_estimates <- estimates_and_clusters$Parameter_Estimates
+print(parameter_estimates)
+```
+
+<h3>EM Loop</h3>
+
+```{r}
+Expectation_Maximum_Iteration <- function (sample_data, mu, Sigma, k, no_of_iterations) {
+  
+  sample_size <- nrow(sample_data)
+  cluster_sizes <- rep(sample_size/ k, k)
+  
+  for(i in seq(1:no_of_iterations)) { # To be replaced with convergence check
+    Gaussian_likelihoods <- E_step(sample_data, mu, Sigma, k, cluster_sizes)
+    
+    cluster_sizes <- colSums(Gaussian_likelihoods)
+    estimates_and_clusters <- M_step(sample_data, Gaussian_likelihoods, k, cluster_sizes)
+    
+    parameter_estimates <- estimates_and_clusters$Parameter_Estimates
+    mu <- parameter_estimates$Next_Mu
+    Sigma <- parameter_estimates$Next_Sigma
+  }
+  
+  return(estimates_and_clusters)
+}
+```
+
+```{r}
+estimates_and_clusters <- Expectation_Maximum_Iteration(data, mu, Sigma, k, no_of_iterations = 500)
+parameter_estimates <- estimates_and_clusters$Parameter_Estimates
+print(parameter_estimates)
+```
