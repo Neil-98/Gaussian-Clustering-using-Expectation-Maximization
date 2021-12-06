@@ -20,7 +20,7 @@ sample_size <- nrow(data)
 no_of_dimensions <- ncol(data)
 
 # Set initial parameters
-set.seed(123)
+set.seed(103)
 mu <- matrix(sample(-10:10, no_of_dimensions * k, replace = TRUE), nrow = no_of_dimensions, ncol = k)
 Sigma <- array(data = NaN, c(no_of_dimensions, no_of_dimensions, k))
 for(i in seq(1:k)) {
@@ -35,15 +35,11 @@ E_step <- function(sample_data, mu, Sigma, k, cluster_sizes) {
   
   sample_size <- nrow(sample_data)
   
-  # denominator <- matrix(0, sample_size, 1)
-  # for(i in seq(1:k)) {
-  #  denominator <- denominator + (1 / k) * dmvnorm(sample_data, mu[, i], Sigma[, , i], log = FALSE)
-  # }
-  
   Gaussian_likelihoods <- matrix(0, sample_size, k)
   
   for(i in seq(1:k)) {
-    Gaussian_likelihoods[, i] <- (1 / cluster_sizes[i]) * dmvnorm(sample_data, mu[, i], Sigma[, , i])
+    # Gaussian_likelihoods[, i] <- (1 / cluster_sizes[i]) * dmvnorm(sample_data, mu[, i], Sigma[, , i])
+    Gaussian_likelihoods[, i] <- dmvnorm(sample_data, mu[, i], Sigma[, , i])
   }
   
   Gaussian_likelihoods <- Gaussian_likelihoods/ rowSums(Gaussian_likelihoods)
@@ -85,25 +81,16 @@ M_step <- function(sample_data, Gaussian_likelihoods, k, cluster_sizes) {
   for(i in seq(1:k)) {
     Gaussian_cluster[, , i] <- rep(Gaussian_likelihoods[, i], no_of_dimensions)
   }
-  #
-  # print(paste("Gaussian likelihoods = ", length(Gaussian_likelihoods[,1])))
-  # print(paste("Sample data = ", length(sample_data)))
-  # print(paste("Sample data (upto no of likelihoods) = ", length(sample_data[1:length(Gaussian_likelihoods)])))
+  
   for(i in seq(1:k)) {
     
-    # cluster_name <- paste("Gaussian_cluster", i, sep = "")
-    # assign(cluster_name, t(sample_data[expected_Gaussians == i])) # Data estimated to belong to Gaussian number i
-    # print(paste("Loop Iteration: ", i))
-    Gaussian_cluster[, , i] <- Gaussian_likelihoods[, i] * sample_data # Data estimated to belong to Gaussian number i
+    # Gaussian_cluster[, , i] <- Gaussian_likelihoods[, i] * sample_data # Data estimated to belong to Gaussian number i
     
-    # print("Fine till here")
-    # print(paste("Gaussian cluster ", i, ":"))
-    # print(Gaussian_cluster[i, length(Gaussian_likelihoods[, i])])
-    next_mu[, i] <- colSums(Gaussian_cluster[, , i])/ cluster_sizes[i]
+    next_mu[, i] <- colSums(Gaussian_likelihoods[, i] * sample_data)/ cluster_sizes[i]
     
-    standard_deviations <- Gaussian_cluster[, , i] - rep(t(next_mu[, i]), sample_size)
+    standard_deviations <- Gaussian_likelihoods[, i] * (sample_data - rep(t(next_mu[, i]), sample_size))
+    # standard_deviations <-(Gaussian_likelihoods[, i] * sample_data - rep(t(next_mu[, i]), sample_size))
     next_Sigma[, , i] <- (t(standard_deviations) %*% standard_deviations) / cluster_sizes[i]
-    # sqrt(sum((Gaussian_cluster[, , i] - next_mu[, i]) ^ 2, na.rm = TRUE) / nrow(Gaussian_cluster[, , i]))
   }
   
   parameter_estimates <- list(next_mu, next_Sigma)
@@ -130,7 +117,7 @@ Gaussian_Mixture_Model_Clustering <- function (sample_data, mu, Sigma, k, margin
   sample_size <- nrow(sample_data)
   cluster_sizes <- rep(sample_size/ k, k)
   
-  prev_mu <- mu
+  prev_likelihoods <- matrix(data = 0, nrow = sample_size, ncol = k)
   convergence <- FALSE
   
   i <- 1
@@ -142,20 +129,19 @@ Gaussian_Mixture_Model_Clustering <- function (sample_data, mu, Sigma, k, margin
     
     parameter_estimates <- estimates_and_clusters$Parameter_Estimates
     
-    prev_mu <- mu
-    
     mu <- parameter_estimates$Next_Mu
     Sigma <- parameter_estimates$Next_Sigma
     
-    error <- sum(abs(mu - prev_mu))/ k
-    # print(paste("error = ", error))
-    acceptable_error <- sum(abs(margin_of_error * prev_mu))/ k
-    # print(paste("acceptable error = ", acceptable_error))
+    error <- Gaussian_likelihoods - prev_likelihoods
+    # print(paste("error = ", summary(error)))
+    acceptable_error <- margin_of_error * prev_likelihoods
+    # print(paste("acceptable error = ", summary(acceptable_error)))
     
-    if(error <= acceptable_error) {
+    if(all(error <= acceptable_error)) {
       convergence <- TRUE
     }
     
+    prev_likelihoods <- Gaussian_likelihoods
     i <- i + 1
   }
   
@@ -167,7 +153,7 @@ Gaussian_Mixture_Model_Clustering <- function (sample_data, mu, Sigma, k, margin
 ```
 
 ```{r}
-result_summary <- Gaussian_Mixture_Model_Clustering(data, mu, Sigma, k, margin_of_error = 0.000000000005)
+result_summary <- Gaussian_Mixture_Model_Clustering(data, mu, Sigma, k, margin_of_error = 0.0000000000001)
 no_of_interations <- result_summary$No_of_Iterations
 parameter_estimates <- result_summary$Parameter_Estimates
 print(paste("Reached convergence at iteration ", no_of_interations, " ... "))
